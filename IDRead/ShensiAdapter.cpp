@@ -144,8 +144,8 @@ struct wz_txt_format
 	wchar_t sAddress[35];	//地址
 	wchar_t sIDNum[18];		//证件号码
 	wchar_t sDep[15];		//发证机关
-	wchar_t sValidBegin[8];	//有效期始
-	wchar_t sValidEnd[8];	//有效期止
+	wchar_t sValidBegin[8];	//有效期始（YYYYMMDD）
+	wchar_t sValidEnd[8];	//有效期止(YYYYMMDD或者长期）
 	union
 	{
 		pass_format pass;			//居住证格式
