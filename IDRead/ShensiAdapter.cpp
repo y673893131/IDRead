@@ -34,14 +34,29 @@ int CShensiAdapter::init(const std::string& sPath)
 	return 0;
 }
 
+BOOL CShensiAdapter::removeTempDirectory(LPCSTR lpszPath)
+{
+	SHFILEOPSTRUCTA FileOp;
+	FileOp.fFlags = FOF_NOCONFIRMATION;
+	FileOp.hNameMappings = NULL;
+	FileOp.hwnd = NULL;
+	FileOp.lpszProgressTitle = NULL;
+	FileOp.pFrom = lpszPath;
+	FileOp.pTo = NULL;
+	FileOp.wFunc = FO_DELETE;
+	return SHFileOperationA(&FileOp) == 0;
+}
+
 int CShensiAdapter::unInit()
 {
+	stop();
 	if (m_hModule)
 	{
 		::FreeLibrary(m_hModule);
 		m_hModule = nullptr;
 	}
 
+	removeTempDirectory(m_path.c_str());
 	return 0;
 }
 
@@ -57,14 +72,19 @@ void CShensiAdapter::setTimeRate(int ms)
 
 int CShensiAdapter::start()
 {
+	int ret = 0;
 	if (!m_thread)
 	{
 		m_thread = new std::thread(&CShensiAdapter::threadFunc, this);
 		m_thread->detach();
 		return 0;
 	}
+	else
+	{
+		ret = exec(shensi_cmd_init);
+	}
 
-	return -1;
+	return ret;
 }
 
 int CShensiAdapter::stop()
@@ -127,40 +147,15 @@ int CShensiAdapter::loadDll(const std::string& sPath)
 	return 0;
 }
 
-struct pass_format
-{
-	wchar_t sPassCode[9];
-	wchar_t sIssues[5];
-	wchar_t sOther[4];
-	wchar_t sExtend[17];
-};
-
-struct wz_txt_format
-{
-	wchar_t sName[15];		//姓名
-	wchar_t sSex[1];		//性别
-	wchar_t sFolk[2];		//名族
-	wchar_t sBirth[8];		//出生日期
-	wchar_t sAddress[35];	//地址
-	wchar_t sIDNum[18];		//证件号码
-	wchar_t sDep[15];		//发证机关
-	wchar_t sValidBegin[8];	//有效期始（YYYYMMDD）
-	wchar_t sValidEnd[8];	//有效期止(YYYYMMDD或者长期）
-	union
-	{
-		pass_format pass;			//居住证格式
-		wchar_t sNewAddress[35];	//新地址
-	};
-};
-
 void CShensiAdapter::threadFunc()
 {
 	wz_txt_format wz;
 	auto uPath = A2U(m_path);
 	do 
 	{
-		auto ret = exec(shensi_cmd_verify_id);
-		if (ret == Code_Success || ret == Code_Finger_Success)
+		auto ret0 = exec(shensi_cmd_verify_id);
+		int ret = 0;
+		if (ret0 == Code_Success)
 		{
 			if (m_cb)
 			{
@@ -211,9 +206,21 @@ void CShensiAdapter::threadFunc()
 				}
 			}
 		}
-
+		else if (ret0 == Code_Finger_Success || ret0 == Code_Port_Error)
+		{
+			stop();
+			start();
+			printf("swip_card: %d-%d\n", ret0, ret);
+		}
+		
 		std::this_thread::sleep_for(std::chrono::milliseconds(m_timeRate));
 	} while (true);
+}
+
+long WINAPI FilterFunc(DWORD dwExceptionCode)
+{
+	return (dwExceptionCode == STATUS_STACK_OVERFLOW) ?
+	EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH;
 }
 
 int CShensiAdapter::exec(BYTE cmd)
@@ -221,7 +228,15 @@ int CShensiAdapter::exec(BYTE cmd)
 	if (!m_UCommand1)
 		return 0;
 	int arg0 = 0, arg1 = 8811, arg2 = 9986;
-	return m_UCommand1(&cmd, &arg0, &arg1, &arg2);
+	__try
+	{
+		int ret = m_UCommand1(&cmd, &arg0, &arg1, &arg2);
+		return ret;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return GetLastError();
+	}
 }
 
 int CShensiAdapter::exec_query(BYTE cmd, const char* path)
@@ -229,7 +244,14 @@ int CShensiAdapter::exec_query(BYTE cmd, const char* path)
 	if (!m_UCommand1)
 		return 0;
 	int arg0 = 0, arg1 = 8811;
-	return m_UCommand1(&cmd, &arg0, &arg1, (int*)path);
+	__try
+	{
+		return m_UCommand1(&cmd, &arg0, &arg1, (int*)path);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return GetLastError();
+	}
 }
 
 std::wstring CShensiAdapter::removeEndSpace(wchar_t* buff, int size, int realSize)

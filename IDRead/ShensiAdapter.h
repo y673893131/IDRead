@@ -20,6 +20,7 @@ private:
 	void threadFunc();
 	int exec(BYTE);
 	int exec_query(BYTE, const char*);
+	BOOL removeTempDirectory(LPCSTR lpszPath);
 	std::wstring removeEndSpace(wchar_t*, int, int = -1);
 	std::wstring A2U(const std::string &str);
 	std::wstring getSex(wchar_t*);
